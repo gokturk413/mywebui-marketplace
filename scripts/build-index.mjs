@@ -40,6 +40,9 @@ for (const owner of list('packages').filter(d => fs.statSync(path.join(ROOT, 'pa
         const where = `packages/${owner}/${f}`;
         let e;
         try { e = JSON.parse(read(where)); } catch (x) { err(where, 'not JSON: ' + x.message); continue; }
+        // unlisted (the author's choice, Kamran 2026-11-05: listed is the default): not in the index
+        if (e.listed === false) { console.log(`${where}: unlisted, left out of the index`); continue; }
+        if (e.listed !== undefined && e.listed !== true) err(where, 'listed: true or false');
         const id = owner + '/' + f.slice(0, -5);
         if (e.id !== id) err(where, `id must be "${id}" (the file's place)`);
         if (!ID_RE.test(String(e.id))) err(where, 'bad id');

@@ -57,7 +57,7 @@ and `sig`.
 `kind` is `control`, `npm-widget` or `theme`. An npm widget may carry its `npm pack` .tgz in the
 package (`manifest.npm.tarball`), so it needs no npm account. A theme package holds
 `themes/<name>.css`, one plain `html[data-webui-theme="<name>"]{…}` rule each.
-`license.type` is `free` or `private`; commercial packages come later.
+`license.type` is `free`, `private` or `commercial` (installed from phase 2 on). `listed` (default `true`): an entry with `"listed": false` is left out of the index.
 
 ## Checking locally
 
