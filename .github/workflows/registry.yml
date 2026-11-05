@@ -7,6 +7,9 @@ on:
   push:
     branches: [main]
   workflow_dispatch:
+  # packages published on GitHub (topic mywebui-package) show up by themselves within the hour
+  schedule:
+    - cron: '17 * * * *'
 
 permissions:
   contents: read
@@ -23,6 +26,11 @@ jobs:
       - uses: actions/setup-node@v4
         with:
           node-version: 22
+      # packages on GitHub: repositories with the topic mywebui-package (not for pull requests)
+      - if: github.event_name != 'pull_request'
+        run: node scripts/discover.mjs
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
       # downloads every package and checks it the way mywebui does
       - run: node scripts/build-index.mjs --verify
       - if: github.event_name != 'pull_request'

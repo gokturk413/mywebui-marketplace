@@ -153,6 +153,20 @@ async function verify(e) {
 
 if (VERIFY) for (const e of packages) await verify(e);
 
+// A package found on GitHub (scripts/discover.mjs, e.source) that does not pass is left out with
+// its reasons in the log: one author's broken release must not stop the index for everybody.
+// A problem of an entry committed to the registry still stops it (a reviewer sees it in the PR).
+{
+    const discovered = new Set(packages.filter(e => e.source).map(e => e.id));
+    const idOf = (x) => { let m = /^packages\/([^/]+)\/([^/]+)\.json:/.exec(x); if (m) return m[1] + '/' + m[2]; m = /^([a-z0-9-]+\/[a-z0-9._-]+)@/.exec(x); return m ? m[1] : null; };
+    const drop = new Set();
+    for (let i = errors.length - 1; i >= 0; i--) {
+        const id = idOf(errors[i]);
+        if (id && discovered.has(id)) { console.log('  left out (found on GitHub): ' + errors[i]); drop.add(id); errors.splice(i, 1); }
+    }
+    for (let i = packages.length - 1; i >= 0; i--) if (drop.has(packages[i].id)) packages.splice(i, 1);
+}
+
 if (errors.length) {
     console.error(errors.map(x => '✕ ' + x).join('\n'));
     console.error(`\n${errors.length} problem(s); nothing written`);

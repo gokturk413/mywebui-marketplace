@@ -59,6 +59,25 @@ package (`manifest.npm.tarball`), so it needs no npm account. A theme package ho
 `themes/<name>.css`, one plain `html[data-webui-theme="<name>"]{…}` rule each.
 `license.type` is `free`, `private` or `commercial` (installed from phase 2 on). `listed` (default `true`): an entry with `"listed": false` is left out of the index.
 
+## Publishing without a pull request (GitHub)
+
+A package on GitHub appears in the marketplace by itself, within the hour:
+
+1. Add the topic **`mywebui-package`** to the repository (repository → About → Topics).
+2. Put your public key into the repository root as **`mywebui-key.pub`**
+   (`ed25519:<base64 of the 32-byte key>`; VS Code: Marketplace Signing Key… exports it). The
+   GitHub account that owns the repository vouches for the key. The private key never goes
+   into a repository.
+3. Make a release (not a draft, not a pre-release) with two assets: the signed
+   **`<name>-<version>.mwpkg`** and its **`entry.json`** (VS Code: Package for Marketplace writes
+   both; the entry's `download` is the `.mwpkg` asset of the same release).
+
+The registry's CI (`scripts/discover.mjs`, hourly) finds such repositories, takes the newest
+release, checks the package like every other one (SHA-256, signature, manifest, controls, the
+security scan) and lists it. The package id must be `<github owner>/<name>`. A package that
+does not pass is left out, with the reasons in the CI log. `"listed": false` keeps it out.
+An entry committed under `packages/` wins over a discovered one.
+
 ## Checking locally
 
 ```
