@@ -8,6 +8,7 @@ import fs from 'node:fs';
 import path from 'node:path';
 import crypto from 'node:crypto';
 import zlib from 'node:zlib';
+import { scanPackage } from './packageScan.mjs';
 import { fileURLToPath } from 'node:url';
 
 const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
@@ -42,6 +43,8 @@ for (const owner of list('packages').filter(d => fs.statSync(path.join(ROOT, 'pa
         try { e = JSON.parse(read(where)); } catch (x) { err(where, 'not JSON: ' + x.message); continue; }
         // unlisted (the author's choice, Kamran 2026-11-05: listed is the default): not in the index
         if (e.listed === false) { console.log(`${where}: unlisted, left out of the index`); continue; }
+        // the scan result is the registry's, never the author's (set by --verify below)
+        delete e.scan;
         if (e.listed !== undefined && e.listed !== true) err(where, 'listed: true or false');
         const id = owner + '/' + f.slice(0, -5);
         if (e.id !== id) err(where, `id must be "${id}" (the file's place)`);
@@ -139,6 +142,13 @@ async function verify(e) {
         if (!e.uses.network && /\b(fetch|XMLHttpRequest|WebSocket|EventSource)\b/.test(script)) err(where, n + ': network use, but uses.network is false');
         if (!e.uses.writes && /\bsetState\s*\(/.test(script)) err(where, n + ': writes states, but uses.writes is false');
     }
+    // the security scan (Kamran 2026-11-05): controls, themes and the npm tarball inside. A HIGH
+    // finding stops the index until a maintainer has looked at that exact file and put its
+    // sha256 into the entry as "scanAccepted"; the result goes into the index for the designer.
+    const scan = scanPackage(files, m);
+    e.scan = { level: scan.level, findings: scan.findings.length, rules: [...new Set(scan.findings.map(f => f.rule))].slice(0, 20), at: scan.at };
+    for (const f of scan.findings.slice(0, 20)) console.log(`  ${where} [${f.level}] ${f.file}${f.line ? ':' + f.line : ''} ${f.what}`);
+    if (scan.level === 'high' && e.scanAccepted !== e.sha256) err(where, `the security scan found ${scan.findings.filter(f => f.level === 'high').length} high finding(s); a maintainer reviews them and sets "scanAccepted": "<sha256>" in the entry`);
 }
 
 if (VERIFY) for (const e of packages) await verify(e);
