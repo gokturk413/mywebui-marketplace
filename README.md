@@ -19,7 +19,7 @@ release assets in their authors' own repositories.
    | File | Content |
    |---|---|
    | `packages/<owner>/<name>.json` | the entry (below) |
-   | `previews/<owner>/<name>.svg` | the gallery preview: SVG, at most 200 KB, with no script, foreignObject, event attributes or external links |
+   | `previews/<owner>/<name>.svg` or `.png` | the gallery thumbnail (the controls are not loaded before they are installed): SVG with no script, foreignObject, event attributes or external links, or a PNG; at most 200 KB |
    | `keys/<owner>.pub` | first package only: your public key, `ed25519:<base64 of the 32 raw bytes>` |
 
    `<owner>` is your GitHub login in lower case.

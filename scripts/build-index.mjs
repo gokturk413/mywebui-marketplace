@@ -57,8 +57,15 @@ for (const owner of list('packages').filter(d => fs.statSync(path.join(ROOT, 'pa
         let host = '';
         try { const u = new URL(e.download); host = u.hostname; if (u.protocol !== 'https:') err(where, 'download: https'); } catch { err(where, 'download: a URL'); }
         if (host && !RELEASE_HOSTS.includes(host)) err(where, 'download: a GitHub release asset');
-        const preview = `previews/${owner}/${f.slice(0, -5)}.svg`;
-        if (!fs.existsSync(path.join(ROOT, preview))) err(where, 'no ' + preview);
+        // the gallery's thumbnail: previews/<owner>/<name>.svg, or .png (thumb.png, 2026-11-05)
+        const base = `previews/${owner}/${f.slice(0, -5)}`;
+        const preview = fs.existsSync(path.join(ROOT, base + '.svg')) || !fs.existsSync(path.join(ROOT, base + '.png')) ? base + '.svg' : base + '.png';
+        if (!fs.existsSync(path.join(ROOT, preview))) err(where, 'no ' + base + '.svg or .png');
+        else if (preview.endsWith('.png')) {
+            const png = fs.readFileSync(path.join(ROOT, preview));
+            if (png.length > 200 * 1024) err(preview, 'more than 200 KB');
+            if (png.subarray(0, 8).toString('hex') !== '89504e470d0a1a0a') err(preview, 'not a PNG');
+        }
         else {
             const svg = read(preview);
             if (Buffer.byteLength(svg) > 200 * 1024) err(preview, 'more than 200 KB');
