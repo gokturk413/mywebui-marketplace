@@ -20,6 +20,13 @@ const PATH_RE = /^(?!\/)(?!.*(^|\/)\.\.?(\/|$))[A-Za-z0-9._/-]{1,200}$/;
 const KINDS = ['control', 'npm-widget', 'theme'];
 const TYPES = ['string', 'boolean', 'number', 'color', 'date', 'signal', 'screen', 'object', 'enum'];
 const RELEASE_HOSTS = ['github.com', 'objects.githubusercontent.com', 'release-assets.githubusercontent.com'];
+// The entries scripts/discover.mjs wrote in this CI run: their ids are in a file OUTSIDE the
+// checkout ($DISCOVERED_FILE, set by the workflow); an entry's own fields never say it.
+const DISCOVERED = new Set((() => {
+    const f = process.env.DISCOVERED_FILE;
+    if (!f || !fs.existsSync(f)) return [];
+    try { return JSON.parse(fs.readFileSync(f, 'utf8')); } catch { return []; }
+})());
 const errors = [];
 let current = null;   // the package being checked: every error is that package's
 const err = (where, msg) => errors.push({ text: `${where}: ${msg}`, id: current });
@@ -47,6 +54,8 @@ for (const owner of list('packages').filter(d => fs.statSync(path.join(ROOT, 'pa
         if (e.listed === false) { console.log(`${where}: unlisted, left out of the index`); continue; }
         // the scan result is the registry's, never the author's (set by --verify below)
         delete e.scan;
+        // "source" is written by discover.mjs only: a committed entry with it is refused
+        if (e.source !== undefined && !DISCOVERED.has(current)) err(where, '"source" is set by the registry for packages found on GitHub, not in an entry');
         if (e.listed !== undefined && e.listed !== true) err(where, 'listed: true or false');
         const id = owner + '/' + f.slice(0, -5);
         if (e.id !== id) err(where, `id must be "${id}" (the file's place)`);
@@ -84,7 +93,7 @@ for (const owner of list('packages').filter(d => fs.statSync(path.join(ROOT, 'pa
             if (/<!DOCTYPE|<!ENTITY|<(animate|set|animateMotion|animateTransform|iframe|embed|object|handler|listener)\b|javascript:|data:(?!image\/(png|jpeg|gif|webp);base64,)|@import|url\(\s*["']?\s*(https?:|\/\/)/i.test(svg)) err(preview, 'no DOCTYPE/entities, animation, embedded documents, javascript:/data: or remote @import/url()');
             if (/(xlink:)?href\s*=\s*["'](?!#)/i.test(svg)) err(preview, 'links (href) may only point inside the SVG (#id)');
         }
-        packages.push({ ...e, preview });
+        packages.push({ ...e, preview, _file: current });
     }
 }
 
@@ -96,6 +105,8 @@ function readZip(buf) {
     const count = buf.readUInt16LE(eocd + 10);
     let p = buf.readUInt32LE(eocd + 16);
     const files = new Map();
+    if (count > 300) throw new Error('more than 300 files');
+    let total = 0;
     for (let i = 0; i < count; i++) {
         const method = buf.readUInt16LE(p + 10), csize = buf.readUInt32LE(p + 20), usize = buf.readUInt32LE(p + 24);
         const nlen = buf.readUInt16LE(p + 28), xlen = buf.readUInt16LE(p + 30), clen = buf.readUInt16LE(p + 32), local = buf.readUInt32LE(p + 42);
@@ -106,6 +117,9 @@ function readZip(buf) {
         const start = local + 30 + buf.readUInt16LE(local + 26) + buf.readUInt16LE(local + 28);
         const data = buf.subarray(start, start + csize);
         if (usize > 20 * 1048576) throw new Error(name + ': larger than 20 MB unpacked');
+        total += usize;
+        if (total > 50 * 1048576) throw new Error('larger than 50 MB unpacked in all');
+        if (files.has(name)) throw new Error('a file twice in the package: ' + name);
         const out = method === 0 ? Buffer.from(data) : method === 8 ? zlib.inflateRawSync(data, { maxOutputLength: 20 * 1048576 }) : null;
         if (!out || out.length !== usize) throw new Error(name + ': unknown compression or wrong size');
         files.set(name, out);
@@ -116,7 +130,7 @@ const sha = (b) => crypto.createHash('sha256').update(b).digest();
 const SPKI = Buffer.from('302a300506032b6570032100', 'hex');
 
 async function verify(e) {
-    current = e.id;
+    current = e._file;
     const where = e.id + '@' + e.version;
     const res = await fetch(e.download, { redirect: 'follow' });
     if (!res.ok) return err(where, `download: HTTP ${res.status}`);
@@ -166,18 +180,15 @@ if (VERIFY) for (const e of packages) await verify(e);
 // A problem of an entry committed to the registry still stops it (a reviewer sees it in the PR).
 {
     current = null;
-    const discovered = new Set(packages.filter(e => e.source).map(e => e.id));
-    // a discovered entry that failed before it reached `packages` (not JSON, bad preview …) is
-    // known by its file: discover.mjs marks its files, so it is dropped the same way
-    for (const owner of list('packages').filter(d => fs.statSync(path.join(ROOT, 'packages', d)).isDirectory())) for (const f of list('packages/' + owner).filter(f => f.endsWith('.json'))) {
-        try { if (JSON.parse(read(`packages/${owner}/${f}`)).source) discovered.add(owner + '/' + f.slice(0, -5)); } catch { }
-    }
+    // errors are kept by the entry's FILE (packages/<owner>/<name>.json → owner/name), and an
+    // entry is dropped by that same key, whatever id it claims
     const drop = new Set();
     for (let i = errors.length - 1; i >= 0; i--) {
         const id = errors[i].id;
-        if (id && discovered.has(id)) { console.log('  left out (found on GitHub): ' + errors[i].text); drop.add(id); errors.splice(i, 1); }
+        if (id && DISCOVERED.has(id)) { console.log('  left out (found on GitHub): ' + errors[i].text); drop.add(id); errors.splice(i, 1); }
     }
-    for (let i = packages.length - 1; i >= 0; i--) if (drop.has(packages[i].id)) packages.splice(i, 1);
+    for (let i = packages.length - 1; i >= 0; i--) if (drop.has(packages[i]._file)) packages.splice(i, 1);
+    for (const e of packages) delete e._file;
 }
 
 if (errors.length) {

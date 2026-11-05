@@ -80,6 +80,7 @@ for (let page = 1; repos.length < MAX_REPOS && page <= 5; page++) {
 log(`${repos.length} repositories with the topic ${TOPIC}`);
 
 let added = 0;
+const written = [];
 for (const repo of repos) {
     const owner = String(repo.owner?.login || '').toLowerCase();
     const where = repo.full_name;
@@ -114,8 +115,11 @@ for (const repo of repos) {
         e.source = { repo: repo.html_url, release: rel.html_url };
         fs.mkdirSync(path.dirname(entryFile), { recursive: true });
         fs.writeFileSync(entryFile, JSON.stringify(e, null, 1));
+        written.push(owner + '/' + name);
         added++;
         log(`${where}: ${e.id} ${e.version}`);
     } catch (x) { log(`${where}: ${x.message}`); }
 }
+// the ids written here, for build-index — outside the checkout, so no entry can claim it
+if (process.env.DISCOVERED_FILE) fs.writeFileSync(process.env.DISCOVERED_FILE, JSON.stringify(written));
 log(`${added} package(s) found on GitHub`);

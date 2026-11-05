@@ -31,8 +31,11 @@ jobs:
         run: node scripts/discover.mjs
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          DISCOVERED_FILE: ${{ runner.temp }}/discovered.json
       # downloads every package and checks it the way mywebui does
       - run: node scripts/build-index.mjs --verify
+        env:
+          DISCOVERED_FILE: ${{ runner.temp }}/discovered.json
       - if: github.event_name != 'pull_request'
         uses: actions/upload-pages-artifact@v3
         with:
