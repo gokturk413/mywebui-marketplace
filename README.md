@@ -1,6 +1,6 @@
 # mywebui marketplace
 
-The community registry of custom controls and npm widgets for
+The community registry of custom controls, npm widgets and themes for
 [mywebui](https://github.com/gokturk413/ioBroker.mywebui). The designer shows these packages in
 **Gallery → Marketplace**.
 
@@ -54,8 +54,10 @@ and `sig`.
 }
 ```
 
-`kind` is `control` or `npm-widget`. `license.type` is `free` or `private`; commercial packages
-come later.
+`kind` is `control`, `npm-widget` or `theme`. An npm widget may carry its `npm pack` .tgz in the
+package (`manifest.npm.tarball`), so it needs no npm account. A theme package holds
+`themes/<name>.css`, one plain `html[data-webui-theme="<name>"]{…}` rule each.
+`license.type` is `free` or `private`; commercial packages come later.
 
 ## Checking locally
 
