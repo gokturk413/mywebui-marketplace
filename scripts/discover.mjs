@@ -58,11 +58,16 @@ function previewOf(buf) {
         p += 46 + nlen + xlen + clen;
         const start = local + 30 + buf.readUInt16LE(local + 26) + buf.readUInt16LE(local + 28);
         const data = buf.subarray(start, start + csize);
-        if (name === 'manifest.json' || /\.(svg|png)$/.test(name)) files.set(name, method === 8 ? zlib.inflateRawSync(data) : Buffer.from(data));
+        // only the manifest and the previews, each with a cap (no zip bomb)
+        const cap = name === 'manifest.json' ? 1048576 : 200 * 1024;
+        if (name === 'manifest.json' || /\.(svg|png)$/.test(name)) {
+            if (buf.readUInt32LE(p - (46 + nlen + xlen + clen) + 24) > cap) continue;
+            files.set(name, method === 8 ? zlib.inflateRawSync(data, { maxOutputLength: cap }) : Buffer.from(data.subarray(0, cap)));
+        }
     }
     const m = JSON.parse(files.get('manifest.json')?.toString('utf8') ?? 'null');
     const pv = m && typeof m.preview === 'string' ? files.get(m.preview) : null;
-    if (!pv) throw new Error('no preview in the package');
+    if (!pv) throw new Error('no preview in the package (or it is larger than 200 KB)');
     return { ext: m.preview.endsWith('.png') ? 'png' : 'svg', data: pv };
 }
 

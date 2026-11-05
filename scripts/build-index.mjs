@@ -21,7 +21,8 @@ const KINDS = ['control', 'npm-widget', 'theme'];
 const TYPES = ['string', 'boolean', 'number', 'color', 'date', 'signal', 'screen', 'object', 'enum'];
 const RELEASE_HOSTS = ['github.com', 'objects.githubusercontent.com', 'release-assets.githubusercontent.com'];
 const errors = [];
-const err = (where, msg) => errors.push(`${where}: ${msg}`);
+let current = null;   // the package being checked: every error is that package's
+const err = (where, msg) => errors.push({ text: `${where}: ${msg}`, id: current });
 
 const read = (p) => fs.readFileSync(path.join(ROOT, p), 'utf8');
 const list = (dir) => fs.existsSync(path.join(ROOT, dir)) ? fs.readdirSync(path.join(ROOT, dir)) : [];
@@ -39,6 +40,7 @@ const packages = [];
 for (const owner of list('packages').filter(d => fs.statSync(path.join(ROOT, 'packages', d)).isDirectory())) {
     for (const f of list('packages/' + owner).filter(f => f.endsWith('.json'))) {
         const where = `packages/${owner}/${f}`;
+        current = owner + '/' + f.slice(0, -5);
         let e;
         try { e = JSON.parse(read(where)); } catch (x) { err(where, 'not JSON: ' + x.message); continue; }
         // unlisted (the author's choice, Kamran 2026-11-05: listed is the default): not in the index
@@ -77,6 +79,10 @@ for (const owner of list('packages').filter(d => fs.statSync(path.join(ROOT, 'pa
             if (Buffer.byteLength(svg) > 200 * 1024) err(preview, 'more than 200 KB');
             if (!/^\s*(<\?xml[^>]*>\s*)?(<!--[\s\S]*?-->\s*)*<svg[\s>]/i.test(svg)) err(preview, 'not an SVG');
             if (/<script|<foreignObject|\bon[a-z]+\s*=|(href|src)\s*=\s*["']\s*(https?:|\/\/|javascript:)/i.test(svg)) err(preview, 'no script, foreignObject, event attributes or external links');
+            // and nothing that runs, loads or expands: no DOCTYPE / entities, animation, embedded
+            // documents, data: or javascript: anywhere, no @import or url() to another place
+            if (/<!DOCTYPE|<!ENTITY|<(animate|set|animateMotion|animateTransform|iframe|embed|object|handler|listener)\b|javascript:|data:(?!image\/(png|jpeg|gif|webp);base64,)|@import|url\(\s*["']?\s*(https?:|\/\/)/i.test(svg)) err(preview, 'no DOCTYPE/entities, animation, embedded documents, javascript:/data: or remote @import/url()');
+            if (/(xlink:)?href\s*=\s*["'](?!#)/i.test(svg)) err(preview, 'links (href) may only point inside the SVG (#id)');
         }
         packages.push({ ...e, preview });
     }
@@ -99,7 +105,8 @@ function readZip(buf) {
         if (!PATH_RE.test(name)) throw new Error('a file name a package may not have: ' + name);
         const start = local + 30 + buf.readUInt16LE(local + 26) + buf.readUInt16LE(local + 28);
         const data = buf.subarray(start, start + csize);
-        const out = method === 0 ? Buffer.from(data) : method === 8 ? zlib.inflateRawSync(data) : null;
+        if (usize > 20 * 1048576) throw new Error(name + ': larger than 20 MB unpacked');
+        const out = method === 0 ? Buffer.from(data) : method === 8 ? zlib.inflateRawSync(data, { maxOutputLength: 20 * 1048576 }) : null;
         if (!out || out.length !== usize) throw new Error(name + ': unknown compression or wrong size');
         files.set(name, out);
     }
@@ -109,6 +116,7 @@ const sha = (b) => crypto.createHash('sha256').update(b).digest();
 const SPKI = Buffer.from('302a300506032b6570032100', 'hex');
 
 async function verify(e) {
+    current = e.id;
     const where = e.id + '@' + e.version;
     const res = await fetch(e.download, { redirect: 'follow' });
     if (!res.ok) return err(where, `download: HTTP ${res.status}`);
@@ -157,18 +165,23 @@ if (VERIFY) for (const e of packages) await verify(e);
 // its reasons in the log: one author's broken release must not stop the index for everybody.
 // A problem of an entry committed to the registry still stops it (a reviewer sees it in the PR).
 {
+    current = null;
     const discovered = new Set(packages.filter(e => e.source).map(e => e.id));
-    const idOf = (x) => { let m = /^packages\/([^/]+)\/([^/]+)\.json:/.exec(x); if (m) return m[1] + '/' + m[2]; m = /^([a-z0-9-]+\/[a-z0-9._-]+)@/.exec(x); return m ? m[1] : null; };
+    // a discovered entry that failed before it reached `packages` (not JSON, bad preview …) is
+    // known by its file: discover.mjs marks its files, so it is dropped the same way
+    for (const owner of list('packages')) for (const f of list('packages/' + owner)) {
+        try { if (JSON.parse(read(`packages/${owner}/${f}`)).source) discovered.add(owner + '/' + f.slice(0, -5)); } catch { }
+    }
     const drop = new Set();
     for (let i = errors.length - 1; i >= 0; i--) {
-        const id = idOf(errors[i]);
-        if (id && discovered.has(id)) { console.log('  left out (found on GitHub): ' + errors[i]); drop.add(id); errors.splice(i, 1); }
+        const id = errors[i].id;
+        if (id && discovered.has(id)) { console.log('  left out (found on GitHub): ' + errors[i].text); drop.add(id); errors.splice(i, 1); }
     }
     for (let i = packages.length - 1; i >= 0; i--) if (drop.has(packages[i].id)) packages.splice(i, 1);
 }
 
 if (errors.length) {
-    console.error(errors.map(x => '✕ ' + x).join('\n'));
+    console.error(errors.map(x => '✕ ' + x.text).join('\n'));
     console.error(`\n${errors.length} problem(s); nothing written`);
     process.exit(1);
 }
