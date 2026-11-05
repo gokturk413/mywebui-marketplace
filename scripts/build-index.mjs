@@ -169,7 +169,7 @@ if (VERIFY) for (const e of packages) await verify(e);
     const discovered = new Set(packages.filter(e => e.source).map(e => e.id));
     // a discovered entry that failed before it reached `packages` (not JSON, bad preview …) is
     // known by its file: discover.mjs marks its files, so it is dropped the same way
-    for (const owner of list('packages')) for (const f of list('packages/' + owner)) {
+    for (const owner of list('packages').filter(d => fs.statSync(path.join(ROOT, 'packages', d)).isDirectory())) for (const f of list('packages/' + owner).filter(f => f.endsWith('.json'))) {
         try { if (JSON.parse(read(`packages/${owner}/${f}`)).source) discovered.add(owner + '/' + f.slice(0, -5)); } catch { }
     }
     const drop = new Set();
