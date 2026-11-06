@@ -65,6 +65,10 @@ for (const owner of list('packages').filter(d => fs.statSync(path.join(ROOT, 'pa
         if (!VERSION_RE.test(String(e.version))) err(where, 'version: semver');
         if (!KINDS.includes(e.kind)) err(where, 'kind: ' + KINDS.join(' or '));
         if (!e.license || !['free', 'private', 'commercial'].includes(e.license.type)) err(where, 'license.type');
+        if (e.license?.type === 'commercial') {
+            if (typeof e.license.price !== 'string' || !e.license.price || e.license.price.length > 40) err(where, 'license.price: 1–40 characters');
+            if (!/^https:\/\/[^\s@]{1,290}$/i.test(String(e.license.buyUrl ?? ''))) err(where, 'license.buyUrl: an https link');
+        }
         if (e.license?.type === 'free' && !e.license.spdx) err(where, 'a free package names its SPDX licence');
         if (!e.author?.github) err(where, 'author.github');
         if (!e.description?.en) err(where, 'description.en');
